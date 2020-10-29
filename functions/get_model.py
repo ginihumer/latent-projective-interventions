@@ -7,6 +7,7 @@ from parametric_tSNE import Parametric_tSNE
 def get_model(model_name, **kwargs):
     model = {
             'mnist': mnist_model,
+            'cifar10': cifar10_model,
             'umap': umap_model,
             'tsne': tsne_model
         }[model_name]
@@ -25,7 +26,7 @@ def mnist_model(optim):
     model.add(nn.Dense(120, activation='relu', name="fc1"))
     model.add(nn.Dense(100, activation='relu', name="fc2"))
     model.add(nn.Dense(10, activation=None, name="classifier"))
-    # model.add(nn.Softmax(name="classifier")) # is needed in keras to properly train on categorical crossentropy loss (in pytorch the crossentropy loss takes logits as inputs)
+    # model.add(nn.Softmax(name="classifier")) # is needed in keras to properly train on categorical crossentropy loss (in pytorch the crossentropy loss takes logits as inputs) -> or: can just set "from_logits=True" 
     # print(model.output_shape)
     
     model.compile(
@@ -34,7 +35,29 @@ def mnist_model(optim):
         metrics=['accuracy']
     )
     return model
-    
+
+def cifar10_model(optim):
+    model = Sequential()
+    model.add(nn.InputLayer(input_shape=(32, 32, 3), name="in"))
+    model.add(nn.Conv2D(filters=16, kernel_size=3, activation="relu", name="conv1"))
+    model.add(nn.Conv2D(filters=32, kernel_size=3, activation="relu", name="conv2"))
+    model.add(nn.MaxPool2D(pool_size=2, name="pool1"))
+    model.add(nn.Conv2D(filters=64, kernel_size=3, activation="relu", name="conv3"))
+    model.add(nn.MaxPool2D(pool_size=2, name="pool2"))
+    model.add(nn.Conv2D(filters=128, kernel_size=3, activation="relu", name="conv4"))
+    model.add(nn.MaxPool2D(pool_size=2, name="pool3"))
+    model.add(nn.Dropout(0.2, name="drop"))
+    model.add(nn.Flatten(name="flat"))
+    model.add(nn.Dense(10, activation=None, name="classifier"))
+
+    model.compile(
+        optimizer=optim,
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy']
+    )
+    return model
+
+
     
 def umap_model(optim, batch_size, epochs, verbose=False, save_path=None, config=None):
     if save_path is None:

@@ -40,10 +40,14 @@ class Latent_Interventions():
         self.embedding_config = meta_data["embedding_conf"]
         self.embedding_epochs = meta_data["embedding_epochs"]
         self.embedding_batch_size = meta_data["embedding_batch_size"]
+        self.embedding_optim = functions.get_optim(meta_data["embedding_optim"], meta_data["embedding_optim_config"])
+        
               
         
         self.contraction_factors = meta_data["contraction_factors"]
         self.shift_factors = meta_data["shift_factors"]
+        
+        tf.random.set_seed(meta_data["experiment_number"])
         
         self.classifier_model = None
         self.embedder_model = None
@@ -65,7 +69,7 @@ class Latent_Interventions():
         
     def fit_basemodel(self):
         
-        self.classifier_model = functions.get_model(self.model_name, optim=self.optim)
+        self.classifier_model = functions.get_model(self.model_name, optim=functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"]))
         history = self.classifier_model.fit(
             self.X_train,
             self.y_train,
@@ -75,42 +79,46 @@ class Latent_Interventions():
             verbose=self.verbose
         )
         
-        self.classifier_model.save_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
-        self.save_dict("%s/classifiermodel-history-before.json"%self.base_path, history.history)
+        self.classifier_model.save("%s/classifiermodel-weights-before.h5"%self.base_path)
+#         self.classifier_model.save_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+        self.save_dict("%s/classifiermodel-history-before.json"%self.base_path, history.history, to_float=True)
         
         
     def fit_embedding(self):
         self.init_logits()
         
-        self.embedder_model = functions.get_model(self.embedding_approach, verbose=self.verbose, optim=self.optim, batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, config=self.embedding_config)
+        self.embedder_model = functions.get_model(self.embedding_approach, verbose=self.verbose, optim=self.embedding_optim, batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, config=self.embedding_config)
         self.embedder_model.fit(self.logits_train[::self.embedding_subset].numpy()) # with tensorflow tensors, there is an indexing error...
         
         self.embedder_model.save("%s/embeddermodel"%self.base_path)
-        self.save_dict("%s/embeddermodel-history.json"%self.base_path, self.embedder_model.encoder.history.history)
+        #print(self.embedder_model.encoder.history)
+        #self.save_dict("%s/embeddermodel-history.json"%self.base_path, self.embedder_model.encoder.history.history, to_float=True)
         
         
     def fit_intervention(self):
         if self.classifier_model is None:
-            print("classifier model was None; load weights from ", "%s/classifiermodel-weights-before.hdf5"%self.base_path, "instead")
-            self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
-            self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+            print("classifier model was None; load model from ", "%s/classifiermodel-weights-before.h5"%self.base_path, "instead")
+            self.classifier_model = functions.get_model(self.model_name, optim = functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"]))
+            self.classifier_model.load_weights("%s/classifiermodel-weights-before.h5"%self.base_path)
+#             self.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-before.h5"%self.base_path)
+
         
         if self.embedder_model is None:
             print("embedder model was None; load model from ", "%s/embeddermodel"%self.base_path, "instead")
-            self.embedder_model = functions.get_model(self.embedding_approach, optim=self.optim, batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, save_path="%s/embeddermodel"%self.base_path)
+            self.embedder_model = functions.get_model(self.embedding_approach, optim = functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"]), batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, save_path="%s/embeddermodel"%self.base_path, config=self.embedding_config)
         
         # --Train classifier in conjunction with the shifted embedding loss
         embedding_encoder = self.embedder_model.encoder
         embedding_encoder = tf.keras.Model(embedding_encoder.inputs, embedding_encoder.outputs, name="embedder") # rename the model; name is later needed
         embedding_encoder.trainable = False
         
-        #flat = nn.Flatten()(self.classifier_model.get_layer(self.layer_key).output) # if conv layer is used as latent layer, we need to flatten the latent space...
-        #embedder_out = embedding_encoder(flat)
-        embedder_out = embedding_encoder(self.classifier_model.get_layer(self.layer_key).output)
+        flat = nn.Flatten()(self.classifier_model.get_layer(self.layer_key).output) # if conv layer is used as latent layer, we need to flatten the latent space...
+        embedder_out = embedding_encoder(flat)
+        #embedder_out = embedding_encoder(self.classifier_model.get_layer(self.layer_key).output)
         classifier_embedder_model = tf.keras.Model(self.classifier_model.input, [self.classifier_model.output, embedder_out])
         
         classifier_embedder_model.compile(
-            optimizer=self.optim,
+            optimizer= functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"]),
             loss={"classifier": tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), "embedder": tf.keras.losses.MeanSquaredError()},
             loss_weights={"classifier": (1.0 - self.embedding_weight)*2, "embedder": self.embedding_weight*2},
             metrics={"classifier":['accuracy']}
@@ -130,14 +138,17 @@ class Latent_Interventions():
             verbose=self.verbose
         )
 
-        classifier_embedder_model.save_weights("%s/classifiermodel-weights-after-embedding.hdf5"%self.base_path)
-        self.save_dict("%s/classifiermodel-history-after-embedding.json"%self.base_path, history.history)
+        classifier_embedder_model.save("%s/classifiermodel-weights-after-embedding.h5"%self.base_path)
+#         classifier_embedder_model.save_weights("%s/classifiermodel-weights-after-embedding.hdf5"%self.base_path)
+        self.save_dict("%s/classifiermodel-history-after-embedding.json"%self.base_path, history.history, to_float=True)
         
         
         
         # --train classifier as usual, such that it is comparable with the combined model
-        self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
-        self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+        self.classifier_model = functions.get_model(self.model_name, optim =  functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"])) # need to reinitialize the compiler, since we also do this with the "classifier_embedder_model -> comparability
+        self.classifier_model.load_weights("%s/classifiermodel-weights-before.h5"%self.base_path)
+#         self.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-before.h5"%self.base_path)
+
         
         checkpoint = tf.keras.callbacks.ModelCheckpoint("%s/classifiermodel-weights-after-baseline-epoch{epoch:02d}.hdf5"%self.base_path, monitor='loss', save_weights_only=True, verbose=self.verbose, save_best_only=False, save_freq="epoch")
 
@@ -150,27 +161,31 @@ class Latent_Interventions():
             callbacks=[checkpoint],
             verbose=self.verbose
         )
-        self.classifier_model.save_weights("%s/classifiermodel-weights-after-baseline.hdf5"%self.base_path)
-        self.save_dict("%s/classifiermodel-history-after-baseline.json"%self.base_path, history.history)
+        
+        self.classifier_model.save("%s/classifiermodel-weights-after-baseline.h5"%self.base_path)
+#         self.classifier_model.save_weights("%s/classifiermodel-weights-after-baseline.hdf5"%self.base_path)
+        self.save_dict("%s/classifiermodel-history-after-baseline.json"%self.base_path, history.history, to_float=True)
 
 
     def init_logits(self, refresh=False): # calculate logits from a certain layer in the classifier model
         if self.logits_train is None or refresh:
             if self.classifier_model is None:
-                print("classifier model was None; loaded weights from ", "%s/model-weights-before.hdf5"%self.base_path, "instead")
-                self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
-                self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+                print("classifier model was None; loaded model from ", "%s/classifiermodel-weights-before.h5"%self.base_path, "instead")
+                self.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-before.h5"%self.base_path)
+#                 self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
+#                 self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
                 
             # get outputs from a certain layer
             self.sub_model = tf.keras.Model(inputs=self.classifier_model.inputs, outputs=self.classifier_model.get_layer(self.layer_key).output)
             
-            logits_train = self.sub_model(self.X_train)
-            logits_test = self.sub_model(self.X_test)
+            #print(self.X_train)
+            logits_train = self.sub_model.predict(self.X_train)
+            logits_test = self.sub_model.predict(self.X_test)
             
             self.logits_train = tf.reshape(logits_train, [len(logits_train), -1]) # need to reshape to have only 2 dimensions
             self.logits_test = tf.reshape(logits_test, [len(logits_test), -1])
             
-            self.embedding_config["embedding_size"] = self.logits_train.shape[1]
+            self.embedding_config["embedding_size"] = self.sub_model.output.shape[1] # = self.logits_train.shape[1]
         
         
         
@@ -195,16 +210,181 @@ class Latent_Interventions():
             
         return shifted_train
         
-    def save_dict(self, file_path, data):
+    def save_dict(self, file_path, data, to_float=False): # set to_float to true, if the dict consists of lists with float32 types that need to be converted to float64 types
+        if to_float:
+            for h in data:
+                data[h] = list(np.array(data[h]).astype('float'))
         file = open(file_path, "w")
         json.dump(data, file)
         file.close()
         print("saved file to", file_path)
         
-    def load_models(self):
-        self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
-        self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+    def get_dict(self, file_path):
+        file = open(file_path, "r")
+        data = json.load(file)
+        file.close()
+        return data
+    
+    def get_histories(self):
+        return self.get_dict("%s/classifiermodel-history-before.json"%self.base_path), self.get_dict("%s/classifiermodel-history-after-embedding.json"%self.base_path), self.get_dict("%s/classifiermodel-history-after-baseline.json"%self.base_path), {}#self.get_dict("%s/embeddermodel-history.json"%self.base_path)
         
-        self.embedder_model = functions.get_model(self.embedding_approach, optim=self.optim, batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, save_path="%s/embeddermodel"%self.base_path)
+    def load_models(self):
+        self.classifier_model = functions.get_model(self.model_name, optim =  functions.get_optim(self.meta_data["optim"], self.meta_data["optim_config"]))
+        self.classifier_model.load_weights("%s/classifiermodel-weights-before.h5"%self.base_path)
+#         self.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-before.h5"%self.base_path)
+        
+        # get outputs from a certain layer
+        self.sub_model = tf.keras.Model(inputs=self.classifier_model.inputs, outputs=self.classifier_model.get_layer(self.layer_key).output)
+        self.embedding_config["embedding_size"] = self.sub_model.output.shape[1]
+        
+        self.embedder_model = functions.get_model(self.embedding_approach, optim=self.embedding_optim, batch_size=self.embedding_batch_size, epochs=self.embedding_epochs, save_path="%s/embeddermodel"%self.base_path, config=self.embedding_config)
+        
+    
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+def get_plis(use_experiment_paths):
+    plis = []
+    for experiment_path in use_experiment_paths:
+        with open("%smeta_data.json"%experiment_path) as json_file:
+            meta_data = json.load(json_file)
+            pli = Latent_Interventions(meta_data)
+            pli.load_models()
+            plis.append(pli)
+    return plis
+
+def plot_histories(use_experiment_paths, metric_key_base="accuracy", metric_key_embed="classifier_accuracy", name="", plot_baseline=False):
+    plis = get_plis(use_experiment_paths)
+        
+    y_base = []
+    y_embed = []
+    x = []
+
+    for i in range(len(plis)):
+        pli = plis[i]
+        history_model_before, history_after_embedding, history_after_baseline, history_embedder = pli.get_histories()
+        
+        y_base.extend(history_model_before[metric_key_base])
+        y_embed.extend(history_model_before[metric_key_base])
+        x.extend(list(range(1, pli.epochs+1)))
+        
+        y_base.extend(history_after_baseline[metric_key_base])
+        y_embed.extend(history_after_embedding[metric_key_embed])
+        x.extend(list(range(pli.epochs+1, pli.epochs+pli.post_epochs+1)))
+
+    if plot_baseline:
+        ax = sns.lineplot(x=x, y=y_base, label="Baseline %s - %s"%(metric_key_base, name), ci=95) #ci=95 -> 95% confidence interval
+    ax = sns.lineplot(x=x, y=y_embed, label="Embedding %s - %s"%(metric_key_embed, name), ci=95)
+    
+    plt.xlabel("epoch")
+    plt.ylabel(metric_key_base)
+    
+    del plis
+    
+    
+from matplotlib import pyplot as plt
+import matplotlib.patches as mpatches
+
+def plot_embedding(embedding, y_train, title=""):
+    fig = plt.figure(figsize=(7,7))
+    ax = fig.add_subplot(111)
+    colors = [plt.cm.tab10.colors[i] for i in y_train]
+    ax.scatter(embedding[:,0], embedding[:,1], c=colors, s=2)
+    ax.set_aspect(1)
+    recs = []
+    for i in range(0,10):
+        recs.append(mpatches.Rectangle((0,0),1,1,fc=plt.cm.tab10.colors[i]))
+    ax.legend(recs,list(range(10)),loc=2)
+    plt.title(title)
+    plt.show()
+    
+def plot_embeddings_from_pli_list_train(use_experiment_paths, name=""):
+    plis = get_plis(use_experiment_paths)
+    
+    for pli in plis:
+        print("train embedding of experiment nr. %s with %s"%(pli.meta_data["experiment_number"], name))
+        
+        # plot embedding of train data BEFORE 
+        pli.init_logits()
+        projected_train = pli.embedder_model.encoder(pli.logits_train)
+        plot_embedding(projected_train, pli.y_train, title="embedding of train data")
+        
+        # plot embedding of the SHIFTED train data BEFORE
+        plot_embedding(pli.get_shifted_data(), pli.y_train, title="embedding of shifted train data")
+        
+        # plot embedding of the train data AFTER it was trained as usual
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-baseline.h5"%pli.base_path)
+        pli.init_logits()
+        projected_train = pli.embedder_model.encoder(pli.logits_train)
+        plot_embedding(projected_train, pli.y_train, title="embedding of train data - after-baseline")
+        
+        # plot embedding of the train data AFTER it was trained with the SHIFTED train data
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-embedding.h5"%pli.base_path)
+        pli.init_logits()
+        projected_train = pli.embedder_model.encoder(pli.logits_train)
+        plot_embedding(projected_train, pli.y_train, title="embedding of train data - after-embedding")
+        
+    del plis
+        
+def plot_embeddings_from_pli_list_test(use_experiment_paths, name=""):
+    plis = get_plis(use_experiment_paths)
+    
+    for pli in plis:
+        print("test embedding of experiment nr. %s with %s"%(pli.meta_data["experiment_number"], name))
+        
+        # plot embedding of the test data AFTER it was trained as usual
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-baseline.h5"%pli.base_path)
+        pli.init_logits()
+        projected_test = pli.embedder_model.encoder(pli.logits_test)
+        plot_embedding(projected_test, pli.y_test, title="embedding of test data - after-baseline")
+        
+        # plot embedding of the test data AFTER it was trained with the SHIFTED train data
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-embedding.h5"%pli.base_path)
+        pli.init_logits()
+        projected_test = pli.embedder_model.encoder(pli.logits_test)
+        plot_embedding(projected_test, pli.y_test, title="embedding of test data - after-embedding")
+        
+    del plis
+        
+def test_set_evaluation(use_experiment_paths, name=""):
+    plis = get_plis(use_experiment_paths)
+    
+    for pli in plis:
+        print("\ntest-set evaluation of experiment nr. %s with %s"%(pli.meta_data["experiment_number"], name))
+        
+        n_classes = len(list(set(pli.y_test)))
+        
+        # test data AFTER it was trained as usual
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-baseline.h5"%pli.base_path)
+        cf_test_baseline = np.zeros((n_classes, n_classes), dtype=int)
+        for i in zip(pli.y_test, pli.classifier_model.predict(pli.X_test).argmax(1)):
+            cf_test_baseline[i] += 1
+
+        # test data AFTER it was trained with the SHIFTED train data
+        pli.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-after-embedding.h5"%pli.base_path)
+        cf_test_altered = np.zeros((n_classes, n_classes), dtype=int)
+        for i in zip(pli.y_test, pli.classifier_model.predict(pli.X_test)[0].argmax(1)): # this model has to outputs (classifier + embedder)
+            cf_test_altered[i] += 1
+            
+        plt.figure(figsize=(15,10))
+        sns.heatmap(cf_test_baseline, annot=True)
+        plt.title("confusion matrix of baseline")
+        plt.show()
+        plt.figure(figsize=(15,10))
+        sns.heatmap(cf_test_altered, annot=True)
+        plt.title("confusion matrix of intervention")
+        plt.show()
+
+        # baseline accuracy
+        print("test accuracy of baseline:", cf_test_baseline.diagonal().sum() / cf_test_baseline.sum())
+
+        # intervention accuracy
+        print("test accuracy of intervention:", cf_test_altered.diagonal().sum() / cf_test_altered.sum())
+        
+    del plis
+        
+        
+        
         
         

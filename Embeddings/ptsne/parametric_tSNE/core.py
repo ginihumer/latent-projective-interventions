@@ -545,21 +545,23 @@ class Parametric_tSNE(object):
 #         return training_data, P_arrays
 
     def save(self, model_path): # just a decorator for automated experiments
-        return self.save_model('%s.h5'%model_path)
+        return self.save_model(model_path)
             
     def save_model(self, model_path):
         """Save the underlying model to `model_path` using Keras"""
-        print("saved model to %s"%model_path)
-        return self.encoder.save(model_path)
+        print("saved model to %s.h5"%model_path)
+        return self.encoder.save_weights('%s.h5'%model_path)
         
     def restore_model(self, model_path, training_betas=None, num_perplexities=None):
         """Restore the underlying model from `model_path`"""
-        if not self._loss_func:
-            # Have to initialize this to load the model
-            self.num_perplexities = self._get_num_perplexities(training_betas, num_perplexities)
-            self._init_loss_func()
-        cust_objects = {self._loss_func.__name__: self._loss_func}
-        self.encoder = models.load_model(model_path, custom_objects=cust_objects)
-        self._all_layers = self.encoder.layers
+#         if not self._loss_func:
+#             # Have to initialize this to load the model
+#             self.num_perplexities = self._get_num_perplexities(training_betas, num_perplexities)
+#             self._init_loss_func()
+#         cust_objects = {self._loss_func.__name__: self._loss_func}
+        print("load embedder model weights from", '%s.h5'%model_path)
+        self.encoder.load_weights('%s.h5'%model_path)
+#         self.encoder = models.load_model('%s.h5'%model_path, custom_objects=cust_objects)
+#         self._all_layers = self.encoder.layers
 
 
