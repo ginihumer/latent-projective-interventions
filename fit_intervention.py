@@ -244,14 +244,18 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+plis = None
+
 def get_plis(use_experiment_paths):
-    plis = []
-    for experiment_path in use_experiment_paths:
-        with open("%smeta_data.json"%experiment_path) as json_file:
-            meta_data = json.load(json_file)
-            pli = Latent_Interventions(meta_data)
-            pli.load_models()
-            plis.append(pli)
+    global plis
+    if plis is None or use_experiment_paths is not None: # refresh plis, if experiment paths are available
+        plis = []
+        for experiment_path in use_experiment_paths:
+            with open("%smeta_data.json"%experiment_path) as json_file:
+                meta_data = json.load(json_file)
+                pli = Latent_Interventions(meta_data)
+                pli.load_models()
+                plis.append(pli)
     return plis
 
 def plot_histories(use_experiment_paths, metric_key_base="accuracy", metric_key_embed="classifier_accuracy", name="", plot_baseline=False):
@@ -280,7 +284,7 @@ def plot_histories(use_experiment_paths, metric_key_base="accuracy", metric_key_
     plt.xlabel("epoch")
     plt.ylabel(metric_key_base)
     
-    del plis
+#     del plis
     
     
 from matplotlib import pyplot as plt
@@ -325,7 +329,7 @@ def plot_embeddings_from_pli_list_train(use_experiment_paths, name=""):
         projected_train = pli.embedder_model.encoder(pli.logits_train)
         plot_embedding(projected_train, pli.y_train, title="embedding of train data - after-embedding")
         
-    del plis
+#     del plis
         
 def plot_embeddings_from_pli_list_test(use_experiment_paths, name=""):
     plis = get_plis(use_experiment_paths)
@@ -345,12 +349,14 @@ def plot_embeddings_from_pli_list_test(use_experiment_paths, name=""):
         projected_test = pli.embedder_model.encoder(pli.logits_test)
         plot_embedding(projected_test, pli.y_test, title="embedding of test data - after-embedding")
         
-    del plis
+#     del plis
         
-def test_set_evaluation(use_experiment_paths, name=""):
+def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
     plis = get_plis(use_experiment_paths)
-    
-    for pli in plis:
+    base_accs = np.zeros(len(plis))
+    emb_accs = np.zeros(len(plis))
+    for j in range(len(plis)):
+        pli = plis[j]
         print("\ntest-set evaluation of experiment nr. %s with %s"%(pli.meta_data["experiment_number"], name))
         
         n_classes = len(list(set(pli.y_test)))
@@ -367,23 +373,26 @@ def test_set_evaluation(use_experiment_paths, name=""):
         for i in zip(pli.y_test, pli.classifier_model.predict(pli.X_test)[0].argmax(1)): # this model has to outputs (classifier + embedder)
             cf_test_altered[i] += 1
             
-        plt.figure(figsize=(15,10))
-        sns.heatmap(cf_test_baseline, annot=True)
-        plt.title("confusion matrix of baseline")
-        plt.show()
-        plt.figure(figsize=(15,10))
-        sns.heatmap(cf_test_altered, annot=True)
-        plt.title("confusion matrix of intervention")
-        plt.show()
+        if plot_cm:
+            plt.figure(figsize=(15,10))
+            sns.heatmap(cf_test_baseline, annot=True)
+            plt.title("confusion matrix of baseline")
+            plt.show()
+            plt.figure(figsize=(15,10))
+            sns.heatmap(cf_test_altered, annot=True)
+            plt.title("confusion matrix of intervention")
+            plt.show()
 
         # baseline accuracy
+        base_accs[j] = cf_test_baseline.diagonal().sum() / cf_test_baseline.sum()
         print("test accuracy of baseline:", cf_test_baseline.diagonal().sum() / cf_test_baseline.sum())
 
         # intervention accuracy
+        emb_accs[j] = cf_test_altered.diagonal().sum() / cf_test_altered.sum()
         print("test accuracy of intervention:", cf_test_altered.diagonal().sum() / cf_test_altered.sum())
         
-    del plis
-        
+#     del plis
+    return base_accs, emb_accs
         
         
         

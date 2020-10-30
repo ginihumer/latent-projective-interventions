@@ -8,6 +8,7 @@ def get_model(model_name, **kwargs):
     model = {
             'mnist': mnist_model,
             'cifar10': cifar10_model,
+            'cifar10_pretrained_vgg16': cifar10_pretrained_vgg16,
             'umap': umap_model,
             'tsne': tsne_model
         }[model_name]
@@ -58,6 +59,112 @@ def cifar10_model(optim):
     return model
 
 
+# adapted from: https://github.com/geifmany/cifar-vgg
+import tensorflow.keras as keras
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, BatchNormalization
+from tensorflow.keras import optimizers
+import numpy as np
+from tensorflow.keras import regularizers
+
+def cifar10_pretrained_vgg16(optim):
+    model = Sequential()
+    weight_decay = 0.0005
+
+    model.add(Conv2D(64, (3, 3), padding='same',
+                     input_shape=(32, 32, 3),kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.3))
+
+    model.add(Conv2D(64, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(128, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(128, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(256, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(256, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(256, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.4))
+
+    model.add(Conv2D(512, (3, 3), padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.5))
+
+    model.add(Flatten())
+    model.add(Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
+    model.add(Activation('relu'))
+    model.add(BatchNormalization())
+
+    model.add(Dropout(0.5))
+    model.add(Dense(10))
+#     model.add(Activation('softmax')) # we work with logits
+
+    model.compile(
+        optimizer=optim,
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy']
+    )
+
+    return model
+
     
 def umap_model(optim, batch_size, epochs, verbose=False, save_path=None, config=None):
     if save_path is None:
@@ -73,7 +180,7 @@ def umap_model(optim, batch_size, epochs, verbose=False, save_path=None, config=
     
     
 def tsne_model(optim, batch_size, epochs, config, verbose=0, save_path=None):
-    model = Parametric_tSNE(config['embedding_size'], 2, config['preplexities'], 
+    model = Parametric_tSNE(config['embedding_size'], 2, config['perplexities'], 
         hidden_layer_dims=config['layer_dims'], alpha=config['alpha'], optimizer=optim, 
         batch_size=batch_size, all_layers=None, do_pretrain=config['do_pretrain'], 
         beta_batch_size=config['beta_batch_size'], epochs=epochs, verbose=verbose)
