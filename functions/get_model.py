@@ -8,7 +8,7 @@ def get_model(model_name, **kwargs):
     model = {
             'mnist': mnist_model,
             'cifar10': cifar10_model,
-            'cifar10_pretrained_vgg16': cifar10_pretrained_vgg16,
+            'cifar10_vgg16': cifar10_vgg16,
             'umap': umap_model,
             'tsne': tsne_model
         }[model_name]
@@ -70,7 +70,7 @@ from tensorflow.keras import optimizers
 import numpy as np
 from tensorflow.keras import regularizers
 
-def cifar10_pretrained_vgg16(optim):
+def cifar10_vgg16(optim):
     model = Sequential()
     weight_decay = 0.0005
 
@@ -154,7 +154,7 @@ def cifar10_pretrained_vgg16(optim):
     model.add(BatchNormalization())
 
     model.add(Dropout(0.5))
-    model.add(Dense(10))
+    model.add(Dense(10, name="classifier"))
 #     model.add(Activation('softmax')) # we work with logits
 
     model.compile(
@@ -162,6 +162,8 @@ def cifar10_pretrained_vgg16(optim):
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         metrics=['accuracy']
     )
+    
+    model.load_weights("models/cifar10vgg.h5")
 
     return model
 
