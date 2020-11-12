@@ -400,7 +400,7 @@ def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
             sns.heatmap(cf_test_altered, annot=True)
             plt.title("confusion matrix of intervention")
             plt.show()
-
+        
         # baseline accuracy
         base_accs[j] = cf_test_baseline.diagonal().sum() / cf_test_baseline.sum()
         print("test accuracy of baseline:", cf_test_baseline.diagonal().sum() / cf_test_baseline.sum())
@@ -408,6 +408,9 @@ def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
         # intervention accuracy
         emb_accs[j] = cf_test_altered.diagonal().sum() / cf_test_altered.sum()
         print("test accuracy of intervention:", cf_test_altered.diagonal().sum() / cf_test_altered.sum())
+        
+        accs = {"base_acc": base_accs[j], "emb_acc": emb_accs[j]}
+        pli.save_dict(pli.base_path + "testset-eval.json", accs, to_float=False)
         
 #     del plis
     return base_accs, emb_accs
