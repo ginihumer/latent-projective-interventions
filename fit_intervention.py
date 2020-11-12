@@ -30,7 +30,7 @@ class Latent_Interventions():
         self.optim = functions.get_optim(meta_data["optim"], meta_data["optim_config"])
         self.X_train, self.y_train, self.X_test, self.y_test = functions.get_data(meta_data["dataset"], meta_data["base_path"])
         
-        if meta_data["normalize"] is not None:
+        if 'normalize' in meta_data.keys() and meta_data["normalize"] is not None:
             self.X_train = normalize(self.X_train, mean=meta_data["normalize"]["mean"], std=meta_data["normalize"]["std"])
             self.X_test = normalize(self.X_test, mean=meta_data["normalize"]["mean"], std=meta_data["normalize"]["std"])
         
@@ -413,7 +413,7 @@ def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
         print("test accuracy of intervention:", cf_test_altered.diagonal().sum() / cf_test_altered.sum())
         
         accs = {"base_acc": base_accs[j], "emb_acc": emb_accs[j]}
-        pli.save_dict(pli.base_path + "testset-eval.json", accs, to_float=False)
+        pli.save_dict(pli.base_path + "/testset-eval.json", accs, to_float=False)
         
 #     del plis
     return base_accs, emb_accs
