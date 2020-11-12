@@ -163,7 +163,10 @@ def cifar10_vgg16(optim):
         metrics=['accuracy']
     )
     
-    model.load_weights("models/cifar10vgg.h5")
+    try:
+        model.load_weights("models/cifar10vgg.h5")
+    except:
+        print("pretrained model could not be loaded from location 'models/cifar10vgg.h5'")
 
     return model
 

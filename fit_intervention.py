@@ -64,8 +64,11 @@ class Latent_Interventions():
     def __call__(self):
         self.fit()
         
-    def fit(self):
+    def save_meta_data(self):
         self.save_dict("%s/meta_data.json"%self.meta_data["base_path"], self.meta_data)
+        
+    def fit(self):
+        self.save_meta_data()
         print("--fitting classifier basemodel--")
         self.fit_basemodel()
         print("--fitting embedder model--")
@@ -215,11 +218,11 @@ class Latent_Interventions():
                     l = distinct_labels[i]
                     shifted_train[labels_train == l] = (contraction_factor[0] * shifted_train[(labels_train == l)]) + contraction_factor[1] * shifted_train[(labels_train == l)].mean(axis=0)
             else:
-                shifted_train[labels_train == k] = (contraction_factor[0] * shifted_train[(labels_train == k)]) + contraction_factor[1] * shifted_train[(labels_train == k)].mean(axis=0)
+                shifted_train[labels_train == int(k)] = (contraction_factor[0] * shifted_train[(labels_train == k)]) + contraction_factor[1] * shifted_train[(labels_train == k)].mean(axis=0)
         
         for k in self.shift_factors:
             shift_factor = self.shift_factors[k]
-            shifted_train[labels_train == k] += np.array(shift_factor)
+            shifted_train[labels_train == int(k)] += np.array(shift_factor)
             
         return shifted_train
         
@@ -400,7 +403,7 @@ def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
             sns.heatmap(cf_test_altered, annot=True)
             plt.title("confusion matrix of intervention")
             plt.show()
-        
+
         # baseline accuracy
         base_accs[j] = cf_test_baseline.diagonal().sum() / cf_test_baseline.sum()
         print("test accuracy of baseline:", cf_test_baseline.diagonal().sum() / cf_test_baseline.sum())
