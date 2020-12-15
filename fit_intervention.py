@@ -182,7 +182,7 @@ class Latent_Interventions():
                 print("classifier model was None; loaded model from ", "%s/classifiermodel-weights-before.h5"%self.base_path, "instead")
                 self.classifier_model = tf.keras.models.load_model("%s/classifiermodel-weights-before.h5"%self.base_path)
 #                 self.classifier_model = functions.get_model(self.model_name, optim = self.optim)
-#                 self.classifier_model.load_weights("%s/classifiermodel-weights-before.hdf5"%self.base_path)
+#                 self.classifier_model.load_weights("%s/classifiermodel-weights-before.h5"%self.base_path)
                 
             # get outputs from a certain layer
             self.sub_model = tf.keras.Model(inputs=self.classifier_model.inputs, outputs=self.classifier_model.get_layer(self.layer_key).output)
@@ -268,13 +268,18 @@ def get_plis(use_experiment_paths, load_models=False):
     if plis is None or use_experiment_paths is not None: # refresh plis, if experiment paths are available
         plis = []
         for experiment_path in use_experiment_paths:
-            with open("%smeta_data.json"%experiment_path) as json_file:
-                meta_data = json.load(json_file)
-                pli = Latent_Interventions(meta_data)
-                if load_models:
-                    pli.load_models(load_train_logits=False)
-                plis.append(pli)
+            pli = get_pli(experiment_path, load_models=False)
+            plis.append(pli)
     return plis
+
+def get_pli(experiment_path, load_models=False):
+    with open("%smeta_data.json"%experiment_path) as json_file:
+        meta_data = json.load(json_file)
+        meta_data["base_path"] = experiment_path
+        pli = Latent_Interventions(meta_data)
+        if load_models:
+            pli.load_models(load_train_logits=False)
+        return pli
 
 def plot_histories(use_experiment_paths, metric_key_base="accuracy", metric_key_embed="classifier_accuracy", name="", plot_baseline=False):
     plis = get_plis(use_experiment_paths)
@@ -419,5 +424,53 @@ def test_set_evaluation(use_experiment_paths, name="", plot_cm=False):
     return base_accs, emb_accs
         
         
-        
-        
+import functions.cluster_metrics as cm
+def cluster_evaluation(use_experiment_paths):
+    for experiment_path in use_experiment_paths:
+        pli = get_pli(experiment_path, load_models=True)
+        print(pli.base_path)
+        metrics_dict_all = {}
+        for model_path in ["classifiermodel-weights-before", "classifiermodel-weights-after-baseline", "classifiermodel-weights-after-embedding"]:
+            print(model_path)
+            print("---high dim space---")
+            metrics_dict = {}
+    
+            pli.classifier_model = tf.keras.models.load_model("%s/%s.h5"%(experiment_path,model_path))
+            pli.init_logits(refresh=True)
+            
+            print("train")
+            #perform all cluster_metric algorithms here
+            cluster_metrics = cm.ClusterMetrics(pli.logits_train, pli.y_train)
+            metrics_dict["train_silhouette"] = cluster_metrics.get_silhouette_score()
+            metrics_dict["train_davies_bouldin"] = cluster_metrics.get_davies_bouldin_score()
+            # metrics_dict["train_dunn"] = cluster_metrics.get_dunn_score() # gets memory exception
+            
+            print("test")
+            #perform all cluster_metric algorithms here
+            cluster_metrics = cm.ClusterMetrics(pli.logits_test, pli.y_test)
+            metrics_dict["test_silhouette"] = cluster_metrics.get_silhouette_score()
+            metrics_dict["test_davies_bouldin"] = cluster_metrics.get_davies_bouldin_score()
+            metrics_dict["test_dunn"] = cluster_metrics.get_dunn_score()
+            
+
+            print("---2D space---")
+            print("train")
+            #perform all cluster_metric algorithms here
+            cluster_metrics = cm.ClusterMetrics(pli.embedder_model.encoder(pli.logits_train), pli.y_train)
+            metrics_dict["train_silhouette_2D"] = cluster_metrics.get_silhouette_score()
+            metrics_dict["train_davies_bouldin_2D"] = cluster_metrics.get_davies_bouldin_score()
+#             metrics_dict["train_dunn"] = cluster_metrics.get_dunn_score() # gets memory exception
+            
+            print("test")
+            #perform all cluster_metric algorithms here
+            cluster_metrics = cm.ClusterMetrics(pli.embedder_model.encoder(pli.logits_test), pli.y_test)
+            metrics_dict["test_silhouette_2D"] = cluster_metrics.get_silhouette_score()
+            metrics_dict["test_davies_bouldin_2D"] = cluster_metrics.get_davies_bouldin_score()
+            metrics_dict["test_dunn_2D"] = cluster_metrics.get_dunn_score()
+            
+            metrics_dict_all[model_path] = metrics_dict
+            
+        print(metrics_dict_all)
+        pli.save_dict(pli.base_path + "/cluster-eval.json", metrics_dict_all, to_float=False)
+    
+    
