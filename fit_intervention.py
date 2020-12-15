@@ -31,6 +31,8 @@ class Latent_Interventions():
         self.X_train, self.y_train, self.X_test, self.y_test = functions.get_data(meta_data["dataset"], meta_data["base_path"])
         
         if 'normalize' in meta_data.keys() and meta_data["normalize"] is not None:
+            self.X_train_default = self.X_train
+            self.X_test_default = self.X_test
             self.X_train = normalize(self.X_train, mean=meta_data["normalize"]["mean"], std=meta_data["normalize"]["std"])
             self.X_test = normalize(self.X_test, mean=meta_data["normalize"]["mean"], std=meta_data["normalize"]["std"])
         
